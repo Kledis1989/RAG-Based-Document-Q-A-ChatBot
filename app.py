@@ -45,7 +45,7 @@ def extract_text_from_files(files):
 if process and uploaded_files and hf_token:
     with st.spinner("Processing documents..."):
         st.session_state.documents_text = extract_text_from_files(uploaded_files)
-        st.session_state.client = InferenceClient(token=hf_token)
+        st.session_state.client = InferenceClient(model="mistralai/Mistral-7B-Instruct-v0.3", token=hf_token)
         st.session_state.processComplete = True
         st.success("Ready! Ask your questions.")
 
@@ -53,21 +53,14 @@ if st.session_state.processComplete:
     user_question = st.text_input("Ask your question:")
     if user_question:
         with st.spinner("Thinking..."):
-            prompt = f"""Based on the training materials below, answer the question.
-
-Training Materials:
-{st.session_state.documents_text[:8000]}
-
-Question: {user_question}
-
-Answer:"""
+            messages = [
+                {"role": "system", "content": f"Answer questions based only on these training materials:\n\n{st.session_state.documents_text[:8000]}"},
+                {"role": "user", "content": user_question}
+            ]
             
-            response = st.session_state.client.text_generation(
-                prompt,
-                model="mistralai/Mistral-7B-Instruct-v0.2",
-                max_new_tokens=500
-            )
-            st.session_state.chat_history.append((user_question, response))
+            response = st.session_state.client.chat_completion(messages=messages, max_tokens=500)
+            answer = response.choices[0].message.content
+            st.session_state.chat_history.append((user_question, answer))
     
     for question, answer in st.session_state.chat_history:
         st.write(f"**You:** {question}")
