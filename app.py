@@ -1,9 +1,6 @@
 import streamlit as st
-from langchain_google_genai import GoogleGenerativeAI, GoogleGenerativeAIEmbeddings
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.vectorstores import FAISS
+import google.generativeai as genai
 from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader, TextLoader
-from langchain.chains import RetrievalQA
 import os
 import tempfile
 
@@ -13,12 +10,12 @@ st.title("🏨 DolceVita Method Training Assistant")
 st.write("Ask any question about DolceVita training materials")
 
 # Initialize session state
-if 'qa_chain' not in st.session_state:
-    st.session_state.qa_chain = None
+if 'documents_text' not in st.session_state:
+    st.session_state.documents_text = ""
 if 'chat_history' not in st.session_state:
     st.session_state.chat_history = []
 if 'processComplete' not in st.session_state:
-    st.session_state.processComplete = None
+    st.session_state.processComplete = False
 
 # Sidebar for API key and file upload
 with st.sidebar:
@@ -33,8 +30,8 @@ with st.sidebar:
     
     process = st.button("Process Documents")
 
-def process_documents(files, api_key):
-    documents = []
+def extract_text_from_files(files):
+    all_text = ""
     
     for file in files:
         file_extension = os.path.splitext(file.name)[1]
@@ -43,48 +40,28 @@ def process_documents(files, api_key):
             temp_file.write(file.read())
             temp_file_path = temp_file.name
         
-        if file_extension == ".pdf":
-            loader = PyPDFLoader(temp_file_path)
-        elif file_extension == ".docx":
-            loader = Docx2txtLoader(temp_file_path)
-        elif file_extension == ".txt":
-            loader = TextLoader(temp_file_path)
-        
-        documents.extend(loader.load())
-        os.remove(temp_file_path)
+        try:
+            if file_extension == ".pdf":
+                loader = PyPDFLoader(temp_file_path)
+            elif file_extension == ".docx":
+                loader = Docx2txtLoader(temp_file_path)
+            elif file_extension == ".txt":
+                loader = TextLoader(temp_file_path)
+            
+            documents = loader.load()
+            for doc in documents:
+                all_text += doc.page_content + "\n\n"
+        finally:
+            os.remove(temp_file_path)
     
-    text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1000,
-        chunk_overlap=200
-    )
-    doc_chunks = text_splitter.split_documents(documents)
-    
-    embeddings = GoogleGenerativeAIEmbeddings(
-        model="models/embedding-001",
-        google_api_key=api_key
-    )
-    
-    vectorstore = FAISS.from_documents(doc_chunks, embeddings)
-    
-    llm = GoogleGenerativeAI(
-        model="gemini-pro",
-        google_api_key=api_key,
-        temperature=0.3
-    )
-    
-    qa_chain = RetrievalQA.from_chain_type(
-        llm=llm,
-        chain_type="stuff",
-        retriever=vectorstore.as_retriever(search_kwargs={"k": 3}),
-        return_source_documents=True
-    )
-    
-    return qa_chain
+    return all_text
 
 if process and uploaded_files and google_api_key:
     with st.spinner("Processing your documents..."):
-        st.session_state.qa_chain = process_documents(uploaded_files, google_api_key)
+        st.session_state.documents_text = extract_text_from_files(uploaded_files)
         st.session_state.processComplete = True
+        genai.configure(api_key=google_api_key)
+        st.session_state.model = genai.GenerativeModel('gemini-pro')
         st.success("Documents processed! You can now ask questions.")
 
 # Chat interface
@@ -93,8 +70,17 @@ if st.session_state.processComplete:
     
     if user_question:
         with st.spinner("Thinking..."):
-            response = st.session_state.qa_chain({"query": user_question})
-            answer = response['result']
+            prompt = f"""Based on the following training materials, answer the question.
+
+Training Materials:
+{st.session_state.documents_text[:30000]}
+
+Question: {user_question}
+
+Answer based only on the training materials provided above. If the answer is not in the materials, say so."""
+            
+            response = st.session_state.model.generate_content(prompt)
+            answer = response.text
             st.session_state.chat_history.append((user_question, answer))
     
     # Display chat history
