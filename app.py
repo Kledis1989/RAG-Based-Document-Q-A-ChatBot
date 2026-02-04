@@ -50,7 +50,7 @@ if process and uploaded_files and google_api_key:
         try:
             st.session_state.documents_text = extract_text_from_files(uploaded_files)
             genai.configure(api_key=google_api_key)
-            st.session_state.model = genai.GenerativeModel('models/gemini-1.5-flash')
+            st.session_state.model = genai.GenerativeModel('gemini-pro')
             st.session_state.processComplete = True
             st.session_state.api_configured = True
             st.success("Documents processed! You can now ask questions.")
