@@ -61,7 +61,7 @@ if process and uploaded_files and google_api_key:
         st.session_state.documents_text = extract_text_from_files(uploaded_files)
         st.session_state.processComplete = True
         genai.configure(api_key=google_api_key)
-        st.session_state.model = genai.GenerativeModel('gemini-pro')
+       st.session_state.model = genai.GenerativeModel('gemini-1.5-flash')
         st.success("Documents processed! You can now ask questions.")
 
 # Chat interface
