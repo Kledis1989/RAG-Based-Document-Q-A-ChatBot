@@ -15,6 +15,8 @@ if 'chat_history' not in st.session_state:
     st.session_state.chat_history = []
 if 'processComplete' not in st.session_state:
     st.session_state.processComplete = False
+if 'api_configured' not in st.session_state:
+    st.session_state.api_configured = False
 
 with st.sidebar:
     st.header("Configuration")
@@ -45,17 +47,22 @@ def extract_text_from_files(files):
 
 if process and uploaded_files and google_api_key:
     with st.spinner("Processing your documents..."):
-        st.session_state.documents_text = extract_text_from_files(uploaded_files)
-        st.session_state.processComplete = True
-        genai.configure(api_key=google_api_key)
-        st.session_state.model = genai.GenerativeModel('gemini-1.5-flash')
-        st.success("Documents processed! You can now ask questions.")
+        try:
+            st.session_state.documents_text = extract_text_from_files(uploaded_files)
+            genai.configure(api_key=google_api_key)
+            st.session_state.model = genai.GenerativeModel('gemini-1.5-flash')
+            st.session_state.processComplete = True
+            st.session_state.api_configured = True
+            st.success("Documents processed! You can now ask questions.")
+        except Exception as e:
+            st.error(f"Error: {str(e)}. Please check your API key and try again.")
 
-if st.session_state.processComplete:
+if st.session_state.processComplete and st.session_state.api_configured:
     user_question = st.text_input("Ask your question:")
     if user_question:
         with st.spinner("Thinking..."):
-            prompt = f"""Based on the following training materials, answer the question.
+            try:
+                prompt = f"""Based on the following training materials, answer the question.
 
 Training Materials:
 {st.session_state.documents_text[:30000]}
@@ -63,9 +70,12 @@ Training Materials:
 Question: {user_question}
 
 Answer based only on the training materials provided above. If the answer is not in the materials, say so."""
-            response = st.session_state.model.generate_content(prompt)
-            answer = response.text
-            st.session_state.chat_history.append((user_question, answer))
+                response = st.session_state.model.generate_content(prompt)
+                answer = response.text
+                st.session_state.chat_history.append((user_question, answer))
+            except Exception as e:
+                st.error(f"Error generating response: {str(e)}")
+    
     for question, answer in st.session_state.chat_history:
         st.write(f"**You:** {question}")
         st.write(f"**Assistant:** {answer}")
