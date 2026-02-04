@@ -1,106 +1,59 @@
-import os
 import streamlit as st
-from load_documents import load_documents, add_documents_to_index, retrieve_relevant_documents
-from gemini import generate_response
-from utils import load_env
+from langchain_google_genai import GoogleGenerativeAI, GoogleGenerativeAIEmbeddings
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_community.vectorstores import FAISS
+from langchain.chains import ConversationalRetrievalChain
+from langchain.memory import ConversationBufferMemory
+from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader, TextLoader
+import os
+import tempfile
 
-# Load environment variables
-load_env()
+st.set_page_config(page_title="DolceVita Guest Experience Training Assistant", page_icon="🏨")
 
-# Set page configuration for dark theme
-st.set_page_config(
-    page_title="RAG Based with Document Upload",
-    page_icon=":robot_face:",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
+st.title("🏨 DolceVita Method Training Assistant")
+st.write("Ask any question about Luxury Hospitality Training and Guest Experience")
 
-# Apply custom CSS for dark theme
-st.markdown(
-    """
-    <style>
-    body {
-        background-color: #1e1e1e;
-        color: #ffffff;
-    }
-    .stApp {
-        background-color: #1e1e1e;
-    }
-    .sidebar .sidebar-content {
-        background-color: #2e2e2e;
-    }
-    .css-1d391kg p {
-        color: #ffffff;
-    }
-    .css-1cpxqw2 a {
-        color: #1e90ff;
-    }
-    .css-1cpxqw2 p {
-        color: #ffffff;
-    }
-    .stTextInput input {
-        background-color: #3e3e3e;
-        color: #ffffff;
-    }
-    .stButton button {
-        background-color: #4e4e4e;
-        color: #ffffff;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
+# Initialize session state
+if 'conversation' not in st.session_state:
+    st.session_state.conversation = None
+if 'chat_history' not in st.session_state:
+    st.session_state.chat_history = []
+if 'processComplete' not in st.session_state:
+    st.session_state.processComplete = None
 
-# Streamlit App
-def main():
-    st.title("RAG Based  Document Q&A ChatBot")
-
-    # Sidebar for file uploads
-    st.sidebar.header("Upload Documents")
-    uploaded_files = st.sidebar.file_uploader(
-        "Upload .txt, .pdf, .docx, or .xlsx files", 
-        type=["txt", "pdf", "docx", "xlsx"], 
+# Sidebar for API key and file upload
+with st.sidebar:
+    st.header("Configuration")
+    google_api_key = st.text_input("Enter Google API Key", type="password")
+    
+    uploaded_files = st.file_uploader(
+        "Upload your training documents",
+        type=['pdf', 'docx', 'txt'],
         accept_multiple_files=True
     )
     
-    global documents
+    process = st.button("Process Documents")
 
-    if uploaded_files:
-        for uploaded_file in uploaded_files:
-            file_path = f"temp/{uploaded_file.name}"
-            with open(file_path, "wb") as f:
-                f.write(uploaded_file.read())
-            load_documents(file_path)
-        add_documents_to_index()
-        st.sidebar.success(f"{len(uploaded_files)} file(s) processed and added to the index!")
-
-    # Initialize chat history
-    if "history" not in st.session_state:
-        st.session_state.history = []
-
-    # Chat interface
-    st.header("Chat")
-    user_query = st.text_input("Enter your query:", key="user_query")
-    if st.button("Send"):
-        if user_query.strip():
-            retrieved_docs = retrieve_relevant_documents(user_query)
-            
-            # Add user query to chat history
-            st.session_state.history.append({"user": user_query})
-            
-            # Generate response based on chat history and retrieved documents
-            bot_response = generate_response(user_query, retrieved_docs, st.session_state.history)
-
-            # Add bot response to chat history
-            st.session_state.history.append({"bot": bot_response})
-
-            # Display only the current bot response (not the whole history)
-            st.markdown(f"**Chatbot**: {bot_response}")
-
-if __name__ == "__main__":
-    # Ensure the temp directory exists
-    if not os.path.exists("temp"):
-        os.makedirs("temp")
+def process_documents(files, api_key):
+    documents = []
     
-    # Run Streamlit app
-    main()
+    for file in files:
+        file_extension = os.path.splitext(file.name)[1]
+        
+        with tempfile.NamedTemporaryFile(delete=False, suffix=file_extension) as temp_file:
+            temp_file.write(file.read())
+            temp_file_path = temp_file.name
+        
+        if file_extension == ".pdf":
+            loader = PyPDFLoader(temp_file_path)
+        elif file_extension == ".docx":
+            loader = Docx2txtLoader(temp_file_path)
+        elif file_extension == ".txt":
+            loader = TextLoader(temp_file_path)
+        
+        documents.extend(loader.load())
+        os.remove(temp_file_path)
+    
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=1000,
+        chunk_overlap=2
