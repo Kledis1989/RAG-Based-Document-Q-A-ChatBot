@@ -1,9 +1,6 @@
 streamlit
-langchain
-langchain-google-genai
-langchain-community
 google-generativeai
-faiss-cpu
+langchain-community
 pypdf
 docx2txt
 python-docx
